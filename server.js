@@ -1,4 +1,5 @@
 const express = require("express");
+const crypto = require("crypto");
 
 let cachedToken = null;
 let tokenExpiresAtMs = 0;
@@ -82,31 +83,49 @@ app.get("/events", (req, res) => {
 let purchaseEvents = 0;
 
 app.post("/webhook", express.text({ type: "*/*" }), (req, res) => {
+  const signingKey = process.env.ZETTLE_WEBHOOK_SIGNING_KEY;
+  if (!signingKey) {
+    console.error("Mangler ZETTLE_WEBHOOK_SIGNING_KEY");
+    return res.sendStatus(500);
+  }
+
+  const receivedSignature = req.header("X-iZettle-Signature");
+  if (!receivedSignature) {
+    console.warn("Mangler X-iZettle-Signature");
+    return res.sendStatus(401);
+  }
+
+  const expectedSignature = crypto
+    .createHmac("sha256", signingKey)
+    .update(req.body, "utf8")
+    .digest("hex");
+
+  if (receivedSignature !== expectedSignature) {
+    console.warn("Ugyldig webhook-signatur");
+    return res.sendStatus(401);
+  }
+
+  // Signatur OK – fortsett
   res.sendStatus(200);
-console.log("Webhook received", new Date().toISOString());
+
   let body = req.body;
 
-  // 1) Parse body hvis den er tekst
   if (typeof body === "string") {
     try {
       body = JSON.parse(body);
-    } catch (e) {
-      console.log("Kunne ikke parse body");
+    } catch {
       return;
     }
   }
 
-  // 2) Parse payload hvis payload er tekst
   if (typeof body?.payload === "string") {
     try {
       body.payload = JSON.parse(body.payload);
-    } catch (e) {
-      console.log("Kunne ikke parse payload");
+    } catch {
       return;
     }
   }
 
-  // 3) Hent produkter direkte fra webhook-payload
   const products = body?.payload?.products || [];
 
   for (const p of products) {
@@ -117,16 +136,16 @@ console.log("Webhook received", new Date().toISOString());
       "Ukjent produkt";
 
     const qty = Number(p?.quantity ?? 1) || 1;
-
     bump(name, qty);
   }
 
-  // 4) Send oppdatert leaderboard live til nettsiden
   sendToClients({
     type: "leaderboard",
     at: new Date().toISOString(),
     top: top20(),
   });
+
+  console.log("Webhook verified and processed");
 });
 
 // ---- TEST: purchases count ----
