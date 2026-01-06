@@ -95,16 +95,43 @@ app.post("/webhook", express.text({ type: "*/*" }), (req, res) => {
     return res.sendStatus(401);
   }
 
-  const expectedSignature = crypto
-    .createHmac("sha256", signingKey)
-    .update(req.body, "utf8")
-    .digest("hex");
+const raw = req.body; // dette er raw tekst (viktig)
 
-  if (receivedSignature !== expectedSignature) {
-    console.warn("Ugyldig webhook-signatur");
-    return res.sendStatus(401);
-  }
+// Beregn både hex og base64 (Zettle kan bruke base64)
+const hmac = crypto.createHmac("sha256", signingKey).update(raw, "utf8");
+const expectedHex = hmac.digest("hex");
 
+// må lage hmac på nytt for base64 (digest() "tømmer" objektet)
+const expectedBase64 = crypto
+  .createHmac("sha256", signingKey)
+  .update(raw, "utf8")
+  .digest("base64");
+
+// Noen systemer sender base64 uten padding "=". Normaliser begge veier.
+const recv = String(receivedSignature).trim();
+const recvNoPad = recv.replace(/=+$/, "");
+const expB64NoPad = expectedBase64.replace(/=+$/, "");
+
+// timing-safe compare (bare hvis samme lengde)
+function safeEqual(a, b) {
+  const ba = Buffer.from(a);
+  const bb = Buffer.from(b);
+  if (ba.length !== bb.length) return false;
+  return crypto.timingSafeEqual(ba, bb);
+}
+
+const ok =
+  safeEqual(recv, expectedHex) ||
+  safeEqual(recv, expectedBase64) ||
+  safeEqual(recvNoPad, expB64NoPad);
+
+if (!ok) {
+  console.warn("Ugyldig webhook-signatur");
+  // midlertidig debugging (ikke sensitivt): vis litt av signaturen
+  console.warn("Signature header starts:", recv.slice(0, 12), "len:", recv.length);
+  console.warn("Expected hex len:", expectedHex.length, "Expected b64 len:", expectedBase64.length);
+  return res.sendStatus(401);
+}
   // Signatur OK – fortsett
   res.sendStatus(200);
 
