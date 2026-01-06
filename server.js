@@ -109,6 +109,19 @@ try {
     .digest("hex");
 } catch {}
 
+// 3) HMAC med signingKey hex-dekodet (noen systemer gir nøkkel som hex)
+let expectedHexHexKey = null;
+try {
+  const keyBufHex = Buffer.from(signingKey, "hex");
+  // bare bruk hvis hex-dekoding faktisk ga bytes
+  if (keyBufHex.length > 0) {
+    expectedHexHexKey = crypto
+      .createHmac("sha256", keyBufHex)
+      .update(rawBody)
+      .digest("hex");
+  }
+} catch {}
+
 const recvLower = receivedSignature.toLowerCase();
 
 const ok =
