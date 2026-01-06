@@ -75,12 +75,61 @@ app.get("/events", (req, res) => {
 ======================= */
 
 app.post("/webhook", express.raw({ type: "*/*" }), (req, res) => {
-console.log("WEBHOOK TRAFF SERVEREN");
-console.log("Headers:", req.headers);
-console.log("Raw body:", req.body.toString("utf8"));
+  const signingKey = process.env.ZETTLE_WEBHOOK_SIGNING_KEY;
+  const signature = String(req.header("x-izettle-signature") || "").trim();
+  if (!signingKey || !signature) return res.sendStatus(401);
 
-res.sendStatus(200);
-return;
+  const rawBody = req.body; // Buffer
+
+  // Prøv nøkkel som base64 (mest sannsynlig med Zettle signingKey)
+  const expectedB64 = crypto
+    .createHmac("sha256", Buffer.from(signingKey, "base64"))
+    .update(rawBody)
+    .digest("hex");
+
+  // Prøv nøkkel som tekst (fallback)
+  const expectedText = crypto
+    .createHmac("sha256", signingKey)
+    .update(rawBody)
+    .digest("hex");
+
+  const sig = signature.toLowerCase();
+  const okB64 = sig === expectedB64.toLowerCase();
+  const okText = sig === expectedText.toLowerCase();
+
+  if (!okB64 && !okText) {
+    console.warn("Ugyldig webhook-signatur");
+    console.warn("sig:", sig.slice(0, 12));
+    console.warn("exp(b64):", expectedB64.slice(0, 12));
+    console.warn("exp(text):", expectedText.slice(0, 12));
+    return res.sendStatus(401);
+  }
+
+  // Signatur OK
+  res.sendStatus(200);
+
+  let body;
+  try {
+    body = JSON.parse(rawBody.toString("utf8"));
+  } catch {
+    return;
+  }
+
+  const products = body?.payload?.products || [];
+  for (const p of products) {
+    const name = p?.name || p?.productName || p?.variantName || "Ukjent";
+    const qty = Number(p?.quantity ?? 1) || 1;
+    bump(name, qty);
+  }
+
+  sendToClients({
+    type: "leaderboard",
+    at: new Date().toISOString(),
+    top: top20(),
+  });
+
+  console.log("Webhook verified and processed (", okB64 ? "base64-key" : "text-key", ")");
+
 const signingKey = process.env.ZETTLE_WEBHOOK_SIGNING_KEY;
 const signature = String(req.header("X-iZettle-Signature") || "").trim();
 if (!signingKey || !signature) return res.sendStatus(401);
