@@ -82,18 +82,47 @@ app.get("/events", (req, res) => {
 // ---- WEBHOOK ----
 let purchaseEvents = 0;
 
-app.post("/webhook", express.text({ type: "*/*" }), (req, res) => {
-  const signingKey = process.env.ZETTLE_WEBHOOK_SIGNING_KEY;
-  if (!signingKey) {
-    console.error("Mangler ZETTLE_WEBHOOK_SIGNING_KEY");
-    return res.sendStatus(500);
-  }
+app.post("/webhook", express.raw({ type: "*/*" }), (req, res) => {
+const signingKey = process.env.ZETTLE_WEBHOOK_SIGNING_KEY;
+if (!signingKey) return res.sendStatus(500);
 
-  const receivedSignature = req.header("X-iZettle-Signature");
-  if (!receivedSignature) {
-    console.warn("Mangler X-iZettle-Signature");
-    return res.sendStatus(401);
+const receivedSignature = String(req.header("X-iZettle-Signature") || "").trim();
+if (!receivedSignature) return res.sendStatus(401);
+
+// req.body er raw bytes (Buffer)
+const rawBody = req.body;
+
+// 1) HMAC med signingKey som tekst
+const expectedHexTextKey = crypto
+  .createHmac("sha256", signingKey)
+  .update(rawBody)
+  .digest("hex");
+
+// 2) HMAC med signingKey base64-dekodet
+let expectedHexB64Key = null;
+try {
+  const keyBuf = Buffer.from(signingKey, "base64");
+  expectedHexB64Key = crypto
+    .createHmac("sha256", keyBuf)
+    .update(rawBody)
+    .digest("hex");
+} catch {}
+
+const recvLower = receivedSignature.toLowerCase();
+
+const ok =
+  recvLower === expectedHexTextKey.toLowerCase() ||
+  (expectedHexB64Key && recvLower === expectedHexB64Key.toLowerCase());
+
+if (!ok) {
+  console.warn("Ugyldig webhook-signatur");
+  console.warn("Sig header starts:", receivedSignature.slice(0, 12));
+  console.warn("Expected(text key) starts:", expectedHexTextKey.slice(0, 12));
+  if (expectedHexB64Key) {
+    console.warn("Expected(b64 key) starts:", expectedHexB64Key.slice(0, 12));
   }
+  return res.sendStatus(401);
+}
 
 const raw = req.body; // dette er raw tekst (viktig)
 
@@ -135,16 +164,22 @@ if (!ok) {
   // Signatur OK – fortsett
   res.sendStatus(200);
 
-  let body = req.body;
+let bodyStr = rawBody.toString("utf8");
+let body;
 
-  if (typeof body === "string") {
-    try {
-      body = JSON.parse(body);
-    } catch {
-      return;
-    }
+try {
+  body = JSON.parse(bodyStr);
+} catch {
+  return;
+}
+
+if (typeof body?.payload === "string") {
+  try {
+    body.payload = JSON.parse(body.payload);
+  } catch {
+    return;
   }
-
+}
   if (typeof body?.payload === "string") {
     try {
       body.payload = JSON.parse(body.payload);
