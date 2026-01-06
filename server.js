@@ -91,7 +91,8 @@ if (!receivedSignature) return res.sendStatus(401);
 
 // req.body er raw bytes (Buffer)
 const rawBody = req.body;
-
+console.log("SigningKey length:", (process.env.ZETTLE_WEBHOOK_SIGNING_KEY || "").length);
+console.log("SigningKey starts:", (process.env.ZETTLE_WEBHOOK_SIGNING_KEY || "").slice(0, 6));
 // 1) HMAC med signingKey som tekst
 const expectedHexTextKey = crypto
   .createHmac("sha256", signingKey)
