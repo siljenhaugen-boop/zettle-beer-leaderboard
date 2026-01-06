@@ -1,0 +1,44 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Øl-leaderboard (live)</title>
+  </head>
+  <body>
+    <h1>Øl-leaderboard (live)</h1>
+    <p>Status: <span id="status">kobler til...</span></p>
+
+    <h2>Topp 20</h2>
+    <ol id="board"></ol>
+
+    <h2>Live-logg</h2>
+    <pre id="log" style="white-space: pre-wrap;"></pre>
+
+    <script>
+      const statusEl = document.getElementById("status");
+      const logEl = document.getElementById("log");
+      const boardEl = document.getElementById("board");
+
+      const es = new EventSource("/events");
+
+      es.onopen = () => (statusEl.textContent = "tilkoblet ✅");
+      es.onerror = () => (statusEl.textContent = "feil / frakoblet ❌");
+
+      es.onmessage = (msg) => {
+        const data = JSON.parse(msg.data);
+
+        if (data.type === "leaderboard") {
+          boardEl.innerHTML = "";
+          for (const row of data.top) {
+            const li = document.createElement("li");
+            li.textContent = `${row.name}: ${row.count}`;
+            boardEl.appendChild(li);
+          }
+        }
+
+        logEl.textContent = msg.data + "\n\n" + logEl.textContent;
+      };
+    </script>
+  </body>
+</html>
+
