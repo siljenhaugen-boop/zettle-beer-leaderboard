@@ -83,7 +83,7 @@ let purchaseEvents = 0;
 
 app.post("/webhook", express.text({ type: "*/*" }), (req, res) => {
   res.sendStatus(200);
-
+console.log("Webhook received", new Date().toISOString());
   let body = req.body;
 
   // 1) Parse body hvis den er tekst
