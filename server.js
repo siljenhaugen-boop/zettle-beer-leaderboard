@@ -75,21 +75,42 @@ app.get("/events", (req, res) => {
 ======================= */
 
 app.post("/webhook", express.raw({ type: "*/*" }), (req, res) => {
-  const signingKey = process.env.ZETTLE_WEBHOOK_SIGNING_KEY;
-  const signature = req.header("X-iZettle-Signature");
+const signingKey = process.env.ZETTLE_WEBHOOK_SIGNING_KEY;
+const signature = String(req.header("X-iZettle-Signature") || "").trim();
+if (!signingKey || !signature) return res.sendStatus(401);
 
-  if (!signingKey || !signature) return res.sendStatus(401);
+const rawBody = req.body; // Buffer (raw bytes)
 
-  const expected = crypto
-    .createHmac("sha256", Buffer.from(signingKey, "base64"))
-    .update(req.body)
+// 1) HMAC med signingKey som TEKST
+const expectedText = crypto
+  .createHmac("sha256", signingKey)
+  .update(rawBody)
+  .digest("hex");
+
+// 2) HMAC med signingKey som BASE64-dekodet
+let expectedB64 = null;
+try {
+  const keyBuf = Buffer.from(signingKey, "base64");
+  expectedB64 = crypto
+    .createHmac("sha256", keyBuf)
+    .update(rawBody)
     .digest("hex");
+} catch {}
 
-  if (signature !== expected) {
-    console.warn("Ugyldig webhook-signatur");
-    return res.sendStatus(401);
-  }
+const sig = signature.toLowerCase();
+const ok =
+  sig === expectedText.toLowerCase() ||
+  (expectedB64 && sig === expectedB64.toLowerCase());
 
+if (!ok) {
+  console.warn("Ugyldig webhook-signatur");
+  console.warn("sig:", sig.slice(0, 12));
+  console.warn("exp(text):", expectedText.slice(0, 12));
+  if (expectedB64) console.warn("exp(b64):", expectedB64.slice(0, 12));
+  return res.sendStatus(401);
+}
+
+// Signatur OK – fortsett
   res.sendStatus(200);
 
   let body;
