@@ -37,35 +37,6 @@ async function getAccessToken() {
 
 const app = express();
 
-let cachedToken = null;
-let tokenExpiresAtMs = 0;
-
-async function getAccessToken() {
-  const now = Date.now();
-  if (cachedToken && now < tokenExpiresAtMs - 60_000) return cachedToken; // 60s buffer
-
-  const clientId = process.env.ZETTLE_CLIENT_ID;
-  const apiKey = process.env.ZETTLE_API_KEY;
-  if (!clientId || !apiKey) throw new Error("Mangler ZETTLE_CLIENT_ID eller ZETTLE_API_KEY");
-
-  const body = new URLSearchParams();
-  body.set("grant_type", "urn:ietf:params:oauth:grant-type:jwt-bearer");
-  body.set("client_id", clientId);
-  body.set("assertion", apiKey);
-
-  const res = await fetch("https://oauth.zettle.com/token", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body,
-  });
-
-  if (!res.ok) throw new Error(`Token-feil ${res.status}: ${await res.text()}`);
-
-  const json = await res.json();
-  cachedToken = json.access_token;
-  tokenExpiresAtMs = Date.now() + (Number(json.expires_in) || 0) * 1000;
-  return cachedToken;
-}
 
 // gjør public/ tilgjengelig
 app.use(express.static("public"));
