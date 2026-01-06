@@ -1,4 +1,41 @@
 const express = require("express");
+const fetch = require("node-fetch");
+
+let cachedToken = null;
+let tokenExpiresAtMs = 0;
+
+async function getAccessToken() {
+  const now = Date.now();
+  if (cachedToken && now < tokenExpiresAtMs - 60_000) return cachedToken; // 60 sek buffer
+
+  const clientId = process.env.ZETTLE_CLIENT_ID;
+  const apiKey = process.env.ZETTLE_API_KEY;
+
+  if (!clientId || !apiKey) {
+    throw new Error("Mangler ZETTLE_CLIENT_ID eller ZETTLE_API_KEY");
+  }
+
+  const body = new URLSearchParams();
+  body.set("grant_type", "urn:ietf:params:oauth:grant-type:jwt-bearer");
+  body.set("client_id", clientId);
+  body.set("assertion", apiKey);
+
+  const res = await fetch("https://oauth.zettle.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body,
+  });
+
+  if (!res.ok) {
+    throw new Error(`Token-feil ${res.status}: ${await res.text()}`);
+  }
+
+  const json = await res.json();
+  cachedToken = json.access_token;
+  tokenExpiresAtMs = Date.now() + (Number(json.expires_in) || 0) * 1000;
+  return cachedToken;
+}
+
 const app = express();
 const fetch = require("node-fetch");
 
@@ -126,7 +163,7 @@ app.post("/webhook", express.text({ type: "*/*" }), (req, res) => {
 // ---- TEST: purchases count ----
 app.get("/purchases-count", async (req, res) => {
   try {
-    const token = process.env.ZETTLE_ACCESS_TOKEN;
+    const token = await getAccessToken();
     if (!token) {
       return res.status(500).send("Mangler ZETTLE_ACCESS_TOKEN");
     }
@@ -160,7 +197,9 @@ app.get("/purchases-count", async (req, res) => {
 });
 
 // ---- START SERVER ----
-app.listen(3000, () => {
-  console.log("Server kjører på http://localhost:3000");
+const PORT = process.env.PORT || 3000;
+
+app.listen(PORT, () => {
+  console.log(`Server kjører på port ${PORT}`);
 });
 
