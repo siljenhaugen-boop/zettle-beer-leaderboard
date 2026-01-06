@@ -1,5 +1,4 @@
 const express = require("express");
-const fetch = require("node-fetch");
 
 let cachedToken = null;
 let tokenExpiresAtMs = 0;
@@ -37,7 +36,6 @@ async function getAccessToken() {
 }
 
 const app = express();
-const fetch = require("node-fetch");
 
 let cachedToken = null;
 let tokenExpiresAtMs = 0;
