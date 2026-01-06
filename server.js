@@ -75,6 +75,12 @@ app.get("/events", (req, res) => {
 ======================= */
 
 app.post("/webhook", express.raw({ type: "*/*" }), (req, res) => {
+console.log("WEBHOOK TRAFF SERVEREN");
+console.log("Headers:", req.headers);
+console.log("Raw body:", req.body.toString("utf8"));
+
+res.sendStatus(200);
+return;
 const signingKey = process.env.ZETTLE_WEBHOOK_SIGNING_KEY;
 const signature = String(req.header("X-iZettle-Signature") || "").trim();
 if (!signingKey || !signature) return res.sendStatus(401);
