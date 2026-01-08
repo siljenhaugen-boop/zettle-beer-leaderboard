@@ -81,27 +81,32 @@ app.post("/webhook", express.raw({ type: "*/*" }), (req, res) => {
 
   const rawBody = req.body; // Buffer
 
-  // Prøv nøkkel som base64 (mest sannsynlig med Zettle signingKey)
-  const expectedB64 = crypto
-    .createHmac("sha256", Buffer.from(signingKey, "base64"))
-    .update(rawBody)
-    .digest("hex");
-
-  // Prøv nøkkel som tekst (fallback)
+ // Prøv nøkkel som tekst
   const expectedText = crypto
     .createHmac("sha256", signingKey)
     .update(rawBody)
     .digest("hex");
 
-  const sig = signature.toLowerCase();
-  const okB64 = sig === expectedB64.toLowerCase();
-  const okText = sig === expectedText.toLowerCase();
+  // Prøv nøkkel som base64 (fallback)
+  let expectedB64 = null;
+  try {
+    expectedB64 = crypto
+      .createHmac("sha256", Buffer.from(signingKey, "base64"))
+      .update(rawBody)
+      .digest("hex");
+  } catch {
+    expectedB64 = null;
+  }
 
+  const sig = signature.toLowerCase();
+  const okText = sig === expectedText.toLowerCase();
+  const okB64 = expectedB64 && sig === expectedB64.toLowerCase();
+  
   if (!okB64 && !okText) {
     console.warn("Ugyldig webhook-signatur");
     console.warn("sig:", sig.slice(0, 12));
-    console.warn("exp(b64):", expectedB64.slice(0, 12));
     console.warn("exp(text):", expectedText.slice(0, 12));
+    if (expectedB64) console.warn("exp(b64):", expectedB64.slice(0, 12));
     return res.sendStatus(401);
   }
 
@@ -128,68 +133,11 @@ app.post("/webhook", express.raw({ type: "*/*" }), (req, res) => {
     top: top20(),
   });
 
-  console.log("Webhook verified and processed (", okB64 ? "base64-key" : "text-key", ")");
-
-const signingKey = process.env.ZETTLE_WEBHOOK_SIGNING_KEY;
-const signature = String(req.header("X-iZettle-Signature") || "").trim();
-if (!signingKey || !signature) return res.sendStatus(401);
-
-const rawBody = req.body; // Buffer (raw bytes)
-
-// 1) HMAC med signingKey som TEKST
-const expectedText = crypto
-  .createHmac("sha256", signingKey)
-  .update(rawBody)
-  .digest("hex");
-
-// 2) HMAC med signingKey som BASE64-dekodet
-let expectedB64 = null;
-try {
-  const keyBuf = Buffer.from(signingKey, "base64");
-  expectedB64 = crypto
-    .createHmac("sha256", keyBuf)
-    .update(rawBody)
-    .digest("hex");
-} catch {}
-
-const sig = signature.toLowerCase();
-const ok =
-  sig === expectedText.toLowerCase() ||
-  (expectedB64 && sig === expectedB64.toLowerCase());
-
-if (!ok) {
-  console.warn("Ugyldig webhook-signatur");
-  console.warn("sig:", sig.slice(0, 12));
-  console.warn("exp(text):", expectedText.slice(0, 12));
-  if (expectedB64) console.warn("exp(b64):", expectedB64.slice(0, 12));
-  return res.sendStatus(401);
-}
-
-// Signatur OK – fortsett
-  res.sendStatus(200);
-
-  let body;
-  try {
-    body = JSON.parse(req.body.toString("utf8"));
-  } catch {
-    return;
-  }
-
-  const products = body?.payload?.products || [];
-  for (const p of products) {
-    bump(
-      p.name || p.productName || p.variantName || "Ukjent",
-      Number(p.quantity || 1)
-    );
-  }
-
-  sendToClients({
-    type: "leaderboard",
-    at: new Date().toISOString(),
-    top: top20(),
-  });
-
-  console.log("Webhook verified and processed");
+  console.log(
+    "Webhook verified and processed (",
+    okB64 ? "base64-key" : "text-key",
+    ")"
+  );
 });
 
 /* =======================
